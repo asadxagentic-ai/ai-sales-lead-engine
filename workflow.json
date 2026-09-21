@@ -1,0 +1,1048 @@
+{
+  "name": "DevtaSoft AI Cold Calling System v2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cold-call-campaign",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "YOUR_ID_HERE",
+      "name": "Lovable UI Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        1088,
+        0
+      ],
+      "webhookId": "f7650e4d-572b-44d7-b82f-5f5dfedb3818"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "i1",
+              "name": "niche",
+              "type": "string",
+              "value": "={{ $json.body?.niche      ?? $json.niche      ?? \"\" }}"
+            },
+            {
+              "id": "i2",
+              "name": "location",
+              "type": "string",
+              "value": "={{ $json.body?.location   ?? $json.location   ?? \"\" }}"
+            },
+            {
+              "id": "i3",
+              "name": "maxResults",
+              "type": "number",
+              "value": "={{ $json.body?.maxResults  ?? $json.maxResults ?? 20 }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c8f7a631-a14b-4d00-ab6f-773e0a9cbc73",
+      "name": "Normalize Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        736,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/compass~crawler-google-places/run-sync-get-dataset-items",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "YOUR_TOKEN_HERE"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  searchStringsArray: [$json.niche + \" in \" + $json.location],\n  locationQuery: $json.location,\n  maxCrawledPlacesPerSearch: $json.maxResults,\n  language: \"en\",\n  includeHistogramOfReviews: yes,\n  includeOpeningHours: false,\n  includePeopleAlsoSearch: false,\n  scrapeContacts: true,\n  skipClosedPlaces: false\n}) }}",
+        "options": {}
+      },
+      "id": "YOUR_ID_HERE",
+      "name": "Scrape Google Maps via Apify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        912,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const COUNTRY_DIAL = {\n  PK: \"92\", US: \"1\", GB: \"44\", IN: \"91\", AU: \"61\",\n  CA: \"1\",  AE: \"971\", SA: \"966\", NG: \"234\", ZA: \"27\",\n  BD: \"880\", LK: \"94\", NP: \"977\", AF: \"93\"\n};\n\nconst results = [];\nfor (const item of $input.all()) {\n  const d = item.json;\n  const raw = (d.address || d.street || \"\").trim();\n  const parts = raw.split(\",\").map(s => s.trim());\n\n  // E.164 normalization\n  let phone = (d.phoneUnformatted || d.phone || \"\").replace(/[\\s\\-().]/g, \"\").trim();\n  if (phone) {\n    if (phone.startsWith(\"+\")) {\n      // already E.164\n    } else if (phone.startsWith(\"00\")) {\n      phone = \"+\" + phone.slice(2);\n    } else {\n      const cc = COUNTRY_DIAL[d.countryCode] || COUNTRY_DIAL[d.country] || \"92\";\n      phone = phone.replace(/^0+/, \"\"); // strip leading zeros\n      phone = \"+\" + cc + phone;\n    }\n  }\n\n  const name = (d.title || d.name || \"\").trim();\n  if (!name || !phone) continue;\n\n  results.push({ json: {\n    businessName:     name,\n    businessCategory: d.categoryName || (d.categories || [])[0] || \"\",\n    address:          parts[0] || raw,\n    city:             d.city  || parts[1] || \"\",\n    state:            d.state || (parts[2] || \"\").replace(/\\d{5}.*/, \"\").trim(),\n    country:          d.countryCode || d.country || \"\",\n    postalCode:       d.postalCode  || ((parts[2] || \"\").match(/\\d{5}/) || [])[0] || \"\",\n    googleRating:     String(d.totalScore || d.rating || \"\"),\n    phoneNumber:      phone,\n    email:            d.email   || \"\",\n    website:          (d.website || \"\").trim(),\n    googleMapsUrl:    d.url     || d.mapsUrl || \"\",\n    vapiCallResult:   \"\",\n    score:            \"\"\n  }});\n}\nreturn results;"
+      },
+      "id": "721fefbe-ce39-4de0-8f5b-318d5840bd21",
+      "name": "Extract and Normalize Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "compare": "selectedFields",
+        "fieldsToCompare": "phoneNumber",
+        "options": {}
+      },
+      "id": "585b4163-19c9-4f03-8cfd-2dccb450fc08",
+      "name": "Deduplicate by Phone",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.firecrawl.dev/v1/scrape",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "YOUR_AUTHORIZATION_HERE"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $json.website, formats: [\"markdown\", \"html\"], onlyMainContent: true }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 3000
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "YOUR_ID_HERE",
+      "name": "Fetch Website HTML",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1344,
+        112
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "model": "nvidia/nemotron-3-super-120b-a12b:free",
+        "options": {}
+      },
+      "id": "YOUR_ID_HERE",
+      "name": "Nemotron via OpenRouter",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        1696,
+        256
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "REPLACE_WITH_YOUR_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const lead = $(\"Deduplicate by Phone\").item.json;\nconst raw = ($input.item.json.output || \"{}\").replace(/```json|```/gm, \"\").trim();\nlet uiScore = 6;\nlet uiReason = \"parse failed - treated as poor site\";\ntry {\n  const p = JSON.parse(raw);\n  uiScore  = typeof p.uiScore === \"number\" ? p.uiScore : 6;\n  uiReason = p.reason || \"\";\n} catch(e) {}\nreturn { json: { ...lead, uiScore, uiReason } };"
+      },
+      "id": "YOUR_ID_HERE",
+      "name": "Parse UI Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1968,
+        112
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "YOUR_ID_HERE",
+      "name": "Merge Qualified Leads",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1344,
+        400
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "8522a14d-a10a-4f21-9338-d59a30d11f48",
+      "name": "Discard - Site Already Good",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1328,
+        592
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_VALUE_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/164pvVRDvqD4j0VbN3b2M6GpEsG7t7lCZRY3TDAbuS-Y/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Business Name": "={{ $json.businessName }}",
+            "Business Category": "={{ $json.businessCategory }}",
+            "Address": "={{ $json.address }}",
+            "City": "={{ $json.city }}",
+            "State": "={{ $json.state }}",
+            "Country": "={{ $json.country }}",
+            "Postal Code": "={{ $json.postalCode }}",
+            "Google Rating": "={{ $json.googleRating }}",
+            "Phone Number": "={{ $json.phoneNumber }}",
+            "Email": "={{ $json.email }}",
+            "Website": "={{ $json.website }}",
+            "Google Maps URL": "={{ $json.googleMapsUrl }}",
+            "UI Score": "={{ $json.uiScore }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Business Name",
+              "displayName": "Business Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Business Category",
+              "displayName": "Business Category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Address",
+              "displayName": "Address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Postal Code",
+              "displayName": "Postal Code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "City",
+              "displayName": "City",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "State",
+              "displayName": "State",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Country",
+              "displayName": "Country",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Google Rating",
+              "displayName": "Google Rating",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Phone Number",
+              "displayName": "Phone Number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Website",
+              "displayName": "Website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "UI Score",
+              "displayName": "UI Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Google Maps URL",
+              "displayName": "Google Maps URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Vapi Call Result",
+              "displayName": "Vapi Call Result",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Score",
+              "displayName": "Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "8c79e34d-de49-4646-b60f-603c49467622",
+      "name": "Save Leads to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1536,
+        400
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "REPLACE_WITH_YOUR_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_VALUE_HERE",
+          "mode": "list",
+          "cachedResultName": "Cold Calling Devta-soft Agent",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/164pvVRDvqD4j0VbN3b2M6GpEsG7t7lCZRY3TDAbuS-Y/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/164pvVRDvqD4j0VbN3b2M6GpEsG7t7lCZRY3TDAbuS-Y/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "754a095a-f2b7-4eb0-bf02-7e7be545492c",
+      "name": "Read Leads for Calling",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1728,
+        400
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "REPLACE_WITH_YOUR_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "e57d241f-b416-4e4f-adc4-fa9f0c70ff01",
+      "name": "Campaign Complete",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2176,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.vapi.ai/call",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "YOUR_AUTHORIZATION_HERE"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify((() => { let p = ($json[\"Phone Number\"] ?? \"\").toString().replace(/[\\s\\-().]/g, \"\"); if (p && !p.startsWith(\"+\")) { if (p.startsWith(\"00\")) p = \"+\" + p.slice(2); else p = \"+\" + (p.startsWith(\"92\") ? \"\" : \"92\") + p.replace(/^0+/, \"\"); } return { assistantId: \"a71651e5-10ad-43e4-beff-e17b974e7ad9\", phoneNumberId: \"4d23ae01-0e74-4cb4-9110-52cac2053928\", customer: { number: p }, assistantOverrides: { variableValues: { businessName: $json[\"Business Name\"] ?? \"\", businessCategory: $json[\"Business Category\"] ?? \"\", website: $json[\"Website\"] ?? \"\", city: $json[\"City\"] ?? \"\" } } }; })()) }}",
+        "options": {}
+      },
+      "id": "YOUR_ID_HERE",
+      "name": "Trigger Vapi Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2176,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "id": "YOUR_ID_HERE",
+      "name": "Wait 3 Minutes",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2336,
+        496
+      ],
+      "webhookId": "bdcd98f5-475b-4a66-85c0-c419a2ac5d78"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "YOUR_ID_HERE",
+      "name": "Loop Leads One by One",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1936,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vapi-cold-call-done",
+        "options": {}
+      },
+      "id": "YOUR_ID_HERE",
+      "name": "Vapi Call Result Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        1296,
+        -64
+      ],
+      "webhookId": "076c0dc5-cb7e-4e79-9717-388ad80b617b"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const body = $input.item.json.body ?? $input.item.json;\nconst msg  = body.message ?? body;\nconst sd   = msg?.analysis?.structuredData ?? {};\nreturn { json: {\n  callId:   msg?.call?.id                   ?? \"\",\n  phone:    msg?.call?.customer?.number      ?? \"\",\n  score:    String(sd.vapiCallResult         ?? \"\"),\n  summary:  msg?.summary                     ?? \"\",\n  callType: msg?.type                        ?? \"end-of-call-report\"\n} };"
+      },
+      "id": "fe493d2a-c15f-48ae-988a-fbcb527f8e57",
+      "name": "Parse Vapi Call Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_VALUE_HERE",
+          "mode": "list",
+          "cachedResultName": "Cold Calling Devta-soft Agent",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/164pvVRDvqD4j0VbN3b2M6GpEsG7t7lCZRY3TDAbuS-Y/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/164pvVRDvqD4j0VbN3b2M6GpEsG7t7lCZRY3TDAbuS-Y/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "Phone Number"
+          ],
+          "value": {
+            "Phone Number": "={{ $json.phone }}",
+            "Vapi Call Result": "={{ $json.summary }}",
+            "Score": "={{ $json.score }}"
+          },
+          "schema": [
+            {
+              "id": "Phone Number",
+              "displayName": "Phone Number",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vapi Call Result",
+              "displayName": "Vapi Call Result",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "Score",
+              "displayName": "Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9bbcf23a-a5f4-49de-9679-b25aaf87636d",
+      "name": "Update Sheet with Call Result",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1744,
+        -64
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "REPLACE_WITH_YOUR_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ \"You are a senior web design and UX expert evaluating a business website to determine if it needs a redesign.\\n\\nWebsite URL: \" + ($json.data?.metadata?.sourceURL ?? $json.website ?? \"\") + \"\\n\\nPage Content (first 5000 chars):\\n\" + (($json.data?.markdown ?? $json.data?.html ?? \"\").substring(0, 5000)) + \"\\n\\nEvaluate based on:\\n1. Visual Design - modern, professional, polished?\\n2. UX & Navigation - easy to use?\\n3. Mobile Responsiveness - mobile-ready?\\n4. Content Quality - clear and professional?\\n5. Calls to Action - clear CTAs?\\n6. Trust Signals - reviews, contact info?\\n7. Overall Impression - would a customer trust this business?\\n\\nScore 0-10:\\n0-3: Broken/blank, no styling\\n4-5: Heavily outdated, poor UX, not mobile-ready\\n6: Mediocre, functional but issues\\n7-8: Modern, clean, responsive\\n9-10: Polished, professional, excellent UX\\n\\nRespond ONLY with valid JSON, no markdown:\\n{\\\"uiScore\\\": <0-10>, \\\"reason\\\": \\\"<one sentence>\\\"}\" }}",
+        "options": {}
+      },
+      "id": "8da8d1f1-9927-46df-8611-779184c5d2f8",
+      "name": "Evaluate Website UI Score",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1696,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message: \"The desired leads are being scraped and will be called one by one. Please check your Google Sheet after 20 minutes to see the results and call scores.\", status: \"CAMPAIGN_STARTED\", niche: $json.niche, location: $json.location, maxResults: $json.maxResults, timestamp: new Date().toISOString() }) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "e1c4da3b-c5ae-49c2-ae70-c303542fe3d5",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1648,
+        592
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "YOUR_ID_HERE",
+              "leftValue": "={{ $json.website }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1136,
+        240
+      ],
+      "id": "YOUR_ID_HERE",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "amount": 2
+      },
+      "id": "YOUR_ID_HERE",
+      "name": "Wait Before Scoring",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1536,
+        112
+      ],
+      "webhookId": "YOUR_WEBHOOKID_HERE"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "YOUR_ID_HERE",
+              "leftValue": "={{ $json.uiScore }}",
+              "rightValue": 7,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2112,
+        112
+      ],
+      "id": "d4cdb933-c959-4aad-a5b4-6017635c7a44",
+      "name": "Ui Filter"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "let phone = ($input.item.json['Phone Number'] ?? '').toString().replace(/[\\s\\-().]/g, '').trim();\n\n// If it doesn't start with +, just prepend it\nif (phone && !phone.startsWith('+')) {\n  phone = '+' + phone;\n}\n\n// Validate E.164: + followed by 7-15 digits\nif (!/^\\+\\d{7,15}$/.test(phone)) {\n  phone = '';\n}\n\nreturn { json: { ...$input.item.json, 'Phone Number': phone } };"
+      },
+      "id": "e164-normalize-code",
+      "name": "Normalize Phone E.164",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        608
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Lovable UI Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Input": {
+      "main": [
+        [
+          {
+            "node": "Scrape Google Maps via Apify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape Google Maps via Apify": {
+      "main": [
+        [
+          {
+            "node": "Extract and Normalize Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract and Normalize Leads": {
+      "main": [
+        [
+          {
+            "node": "Deduplicate by Phone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplicate by Phone": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse UI Score": {
+      "main": [
+        [
+          {
+            "node": "Ui Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Qualified Leads": {
+      "main": [
+        [
+          {
+            "node": "Save Leads to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Leads to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Vapi Call": {
+      "main": [
+        [
+          {
+            "node": "Wait 3 Minutes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 3 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Loop Leads One by One",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Leads One by One": {
+      "main": [
+        [
+          {
+            "node": "Campaign Complete",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize Phone E.164",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vapi Call Result Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Vapi Call Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Vapi Call Result": {
+      "main": [
+        [
+          {
+            "node": "Update Sheet with Call Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Website HTML": {
+      "main": [
+        [
+          {
+            "node": "Wait Before Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nemotron via OpenRouter": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Evaluate Website UI Score",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Website UI Score": {
+      "main": [
+        [
+          {
+            "node": "Parse UI Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        [
+          {
+            "node": "Read Leads for Calling",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Fetch Website HTML",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Qualified Leads",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Wait Before Scoring": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Website UI Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ui Filter": {
+      "main": [
+        [
+          {
+            "node": "Merge Qualified Leads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Discard - Site Already Good",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads for Calling": {
+      "main": [
+        [
+          {
+            "node": "Loop Leads One by One",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Phone E.164": {
+      "main": [
+        [
+          {
+            "node": "Trigger Vapi Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "YOUR_VERSIONID_HERE",
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp",
+    "instanceId": "YOUR_INSTANCEID_HERE"
+  },
+  "nodeGroups": [],
+  "id": "aKcvuPUw3LBZiVuW",
+  "tags": []
+}
